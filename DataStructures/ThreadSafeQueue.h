@@ -15,6 +15,7 @@ public:
 
     void push(T&);
     std::shared_ptr<T> try_pop();
+    bool try_pop(T& value);
     std::shared_ptr<T> wait_and_pop();
 
     bool empty() const;
@@ -46,6 +47,16 @@ std::shared_ptr<T> ThreadSafeQueue<T>::try_pop(){
     std::shared_ptr<T> res=std::make_shared<T>(q.front());
     q.pop();
     return res;
+}
+
+template<typename T>
+bool ThreadSafeQueue<T>::try_pop(T& value){
+    std::unique_lock<std::mutex> lck(mu);
+    if(q.empty())
+        return false;
+    value=q.front();
+    q.pop();
+    return true;
 }
 
 template<typename T>
