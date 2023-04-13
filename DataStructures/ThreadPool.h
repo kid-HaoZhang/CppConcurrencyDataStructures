@@ -30,7 +30,7 @@ class FunctionWarpper{
     };
 public:
     template<typename F>
-    FunctionWarpper(F&& f):impl_type(new impl_type<F>(std::move(f))){}
+    FunctionWarpper(F&& f):impl(std::make_unique<impl_type<F>>(std::move(f))){}
     FunctionWarpper()=default;
     void operator()(){impl->call();}
     FunctionWarpper(FunctionWarpper&& other):impl(std::move(other.impl)){}
@@ -53,11 +53,11 @@ private:
     void work_thread();
 
 public:
-    ThreadPool(unsigned int);
+    ThreadPool();
     ~ThreadPool();
 
     template<typename FunctionType>
-    std::future<typename std::result_of<FunctionType()>> submit(FunctionType);
+    std::future<typename std::result_of<FunctionType()>::type> submit(FunctionType);
 };
 
 void ThreadPool::work_thread(){
@@ -72,11 +72,11 @@ void ThreadPool::work_thread(){
     }
 }
 
-ThreadPool::ThreadPool(unsigned int _threads_num=0):done(false),joiner(threads){
-    threads_num = _threads_num==0?std::min(_threads_num,std::thread::hardware_concurrency()):_threads_num;
+ThreadPool::ThreadPool():done(false),joiner(threads){
+    threads_num = std::thread::hardware_concurrency()-1;
     try{
         for(unsigned int i=0;i<threads_num;++i){
-            threads.push_back(std::thread(work_thread));
+            threads.push_back(std::thread(&ThreadPool::work_thread, this));
         }
     }
     catch(...){
@@ -90,7 +90,7 @@ ThreadPool::~ThreadPool(){
 }
 
 template<typename FunctionType>
-std::future<typename std::result_of<FunctionType()>>  ThreadPool::submit(FunctionType f){
+std::future<typename std::result_of<FunctionType()>::type>  ThreadPool::submit(FunctionType f){
     using result_type = std::result_of<FunctionType()>::type;
     std::packaged_task<result_type()> task(std::move(f));
     std::future<result_type> res(task.get_future());

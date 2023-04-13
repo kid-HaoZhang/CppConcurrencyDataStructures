@@ -14,6 +14,7 @@ public:
     ThreadSafeQueue& operator=(const ThreadSafeQueue&)=delete;
 
     void push(T&);
+    void push(T&&);
     std::shared_ptr<T> try_pop();
     bool try_pop(T& value);
     std::shared_ptr<T> wait_and_pop();
@@ -40,11 +41,18 @@ void ThreadSafeQueue<T>::push(T& value){
 }
 
 template<typename T>
+void ThreadSafeQueue<T>::push(T&& value){
+    std::lock_guard<std::mutex> lck(mu);
+    q.push(std::forward<T>(value));
+    cond.notify_one();
+}
+
+template<typename T>
 std::shared_ptr<T> ThreadSafeQueue<T>::try_pop(){
     std::unique_lock<std::mutex> lck(mu);
     if(q.empty())
         return std::shared_ptr<T>();
-    std::shared_ptr<T> res=std::make_shared<T>(q.front());
+    std::shared_ptr<T> res=std::make_shared<T>(std::move(q.front()));
     q.pop();
     return res;
 }
@@ -54,7 +62,7 @@ bool ThreadSafeQueue<T>::try_pop(T& value){
     std::unique_lock<std::mutex> lck(mu);
     if(q.empty())
         return false;
-    value=q.front();
+    value=std::move(q.front());
     q.pop();
     return true;
 }
