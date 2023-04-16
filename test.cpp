@@ -1,7 +1,7 @@
 #include<thread>
 #include<chrono>
 #include<numeric>
-#include"./DataStructures/ThreadSafeQueue.h"
+
 #include"./DataStructures/LockFreeStack.h"
 #include"./DataStructures/ThreadSafeShared_ptr.h"
 #include"./DataStructures/ThreadPool.h"
@@ -103,7 +103,7 @@ struct accumulate_block
   T operator()(Iterator first,Iterator last)
   {
     T res; 
-    std::accumulate(first,last,result);
+    std::accumulate(first,last,res);
     return res;
   }
 };
@@ -127,8 +127,8 @@ T parallel_accumulate(Iterator first,Iterator last,T init)
   {
     Iterator block_end=block_start;
     std::advance(block_end,block_size);
-    futures[i]=pool.submit([=]{
-      accumulate_block<Iterator,T>()(block_start,block_end);
+    futures[i]=pool.submit([&block_end,&block_start]{
+      return accumulate_block<Iterator,T>()(block_start,block_end);
     }); // 2
     block_start=block_end;
   }
