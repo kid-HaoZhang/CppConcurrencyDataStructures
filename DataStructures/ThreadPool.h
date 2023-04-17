@@ -73,7 +73,7 @@ void ThreadPool::work_thread(){
 }
 
 ThreadPool::ThreadPool():done(false),joiner(threads){
-    threads_num = std::thread::hardware_concurrency()-1;
+    threads_num=std::thread::hardware_concurrency();
     try{
         for(unsigned int i=0;i<threads_num;++i){
             threads.push_back(std::thread(&ThreadPool::work_thread, this));
