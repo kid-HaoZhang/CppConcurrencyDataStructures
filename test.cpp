@@ -1,12 +1,23 @@
 #include<thread>
 #include<chrono>
 #include<numeric>
+#include<sys/time.h>
+#include<mutex>
+#include<time.h>
 
 #include"./DataStructures/LockFreeStack.h"
 #include"./DataStructures/ThreadSafeShared_ptr.h"
 #include"./DataStructures/ThreadPool.h"
+#include"./DataStructures/LockFreePipe.h"
 
-int TEST_TIME=1000;
+static int TEST_TIME=1000;
+
+int64_t get_current_millisecond()
+{
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return ((int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000);
+}
 
 void test_ThreadSafeQueue(){
     ThreadSafeQueue<int> q;
@@ -146,6 +157,34 @@ void test_ThreadPool(){
     std::iota(a.begin(),a.end(),0);
     std::cout<<parallel_accumulate<std::vector<int>::iterator, int>
         (a.begin(),a.end(),0)<<std::endl;
+}
+
+void test_LockFreePipe(){
+    std::atomic<int> count(0);
+    LockFreePipe<int, 128> lckfq;
+    auto pro = [&lckfq](){
+        for(int i = 0; i < TEST_TIME; ++i){
+            lckfq.write(i, false);
+            lckfq.flush();
+        }
+    };
+    auto con = [&lckfq, &count](){
+        int last_value = 0;
+        while(true){        
+            int value = 0;
+            if(lckfq.read(&value)){
+                count.fetch_add(1);
+                last_value = value;
+            }
+            else{
+                std::this_thread::yield();
+            }
+            if(count.load()>=TEST_TIME)
+                break;
+        }
+    };
+    int64_t start = get_current_millisecond();
+    
 }
 
 int main(){
