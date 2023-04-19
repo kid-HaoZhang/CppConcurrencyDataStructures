@@ -10,7 +10,7 @@
 #include"./DataStructures/ThreadPool.h"
 #include"./DataStructures/LockFreePipe.h"
 
-static int TEST_TIME=1000;
+static int TEST_TIME=2000000;
 
 int64_t get_current_millisecond()
 {
@@ -22,21 +22,18 @@ int64_t get_current_millisecond()
 void test_ThreadSafeQueue(){
     ThreadSafeQueue<int> q;
     auto a=[&q](){
-        for(int i=0;i<1000;++i){
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            q.push(i);
-        }
-    };
-    auto b=[&q]{
-        for(int i=0;i<1000;++i){
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        for(int i=0;i<TEST_TIME;++i){
+            // std::this_thread::sleep_for(std::chrono::milliseconds(1));
             q.push(i);
         }
     };
     auto c=[&q]{
+        std::atomic<int> a(0);
         for(int i=0;i<1000;++i){
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            q.try_pop();
+            // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            // q.try_pop();
+            a.fetch_add(1);
+            q.wait_and_pop();
         }
     };
     auto d=[&q]{
@@ -47,14 +44,15 @@ void test_ThreadSafeQueue(){
         for(auto i:r)
             std::cout<<i<<' ';
     };
+    int64_t start = get_current_millisecond();
     std::thread t1=std::thread(a);
-    std::thread t2=std::thread(b);
     std::thread t3=std::thread(c);
-    std::thread t4=std::thread(d);
+    // std::thread t4=std::thread(d);
     t1.join();
-    t2.join();
     t3.join();
-    t4.join();
+    // t4.join();
+    int64_t end = get_current_millisecond();
+    printf("spend time : %ldms\t, push:%d, pop:%d\n", (end - start), TEST_TIME, TEST_TIME);
 }
 
 /*void test_LockFreeStack_atomic(){
@@ -139,7 +137,7 @@ T parallel_accumulate(Iterator first,Iterator last,T init)
     Iterator block_end=block_start;
     std::advance(block_end,block_size);
     futures[i]=pool.submit([block_start,block_end]{
-      accumulate_block<Iterator,T>()(block_start,block_end);
+      return accumulate_block<Iterator,T>()(block_start,block_end);
     }); // 2
     block_start=block_end;
   }
@@ -161,7 +159,7 @@ void test_ThreadPool(){
 
 void test_LockFreePipe(){
     std::atomic<int> count(0);
-    LockFreePipe<int, 128> lckfq;
+    LockFreePipe<int, 64> lckfq;
     auto pro = [&lckfq](){
         for(int i = 0; i < TEST_TIME; ++i){
             lckfq.write(i, false);
@@ -184,13 +182,98 @@ void test_LockFreePipe(){
         }
     };
     int64_t start = get_current_millisecond();
-    
+    std::thread t1 = std::thread(pro);
+    std::thread t2 = std::thread(con);
+    t1.join();
+    t2.join();
+    int64_t end = get_current_millisecond();
+    printf("spend time : %ldms\t, push:%d, pop:%d\n", (end - start), TEST_TIME, TEST_TIME);
+}
+
+void test_LockPipe_cond(){
+    std::mutex mu;
+    std::condition_variable cond;
+    LockFreePipe<int, 64> lckfq;
+
+    auto pro = [&lckfq, &cond, &mu]{
+        for(int i = 0; i < TEST_TIME; ++i){
+            lckfq.write(i, false);
+            if(!lckfq.flush()){
+                std::unique_lock<std::mutex> lck(mu);
+                cond.notify_one();
+            }
+        }
+        std::unique_lock<std::mutex> lck(mu);
+        cond.notify_one();
+    };
+    auto con = [&lckfq, &cond, &mu]{
+        int vl;
+        std::atomic<int> count(0);
+        while(true){
+            int v = 0;
+            if(lckfq.read(&v)){
+                vl = v;
+                count.fetch_add(1);
+            }
+            else{
+                std::unique_lock<std::mutex> lck(mu);
+                cond.wait(lck);
+            }
+            if(count >= TEST_TIME)
+                break;
+        }
+    };
+    int64_t start = get_current_millisecond();
+    std::thread t1 = std::thread(pro);
+    std::thread t2 = std::thread(con);
+    t1.join();
+    t2.join();
+    int64_t end = get_current_millisecond();
+    printf("spend time : %ldms\t, push:%d, pop:%d\n", (end - start), TEST_TIME, TEST_TIME);
+}
+
+void test_LockFreePipe_batch(){
+    LockFreePipe<int, 64> lckfq;
+    auto con = [&lckfq]{
+        std::atomic<int> count(0);
+        int vl = 0;
+        while(true){
+            int v = 0;
+            if(lckfq.read(&v)){
+                count.fetch_add(1);
+            }
+            else{
+                std::this_thread::yield();
+            }
+            if(count>=TEST_TIME)
+                break;
+        }
+    };
+    auto pro = [&lckfq]{
+        int n = TEST_TIME/10;
+        for(int i = 0; i < n; ++i){
+            for(int j = 0; j < 9; ++j)
+                lckfq.write(i, true);
+            lckfq.write(i, false);
+            lckfq.flush();
+        }
+    };
+    int64_t start = get_current_millisecond();
+    std::thread t1 = std::thread(pro);
+    std::thread t2 = std::thread(con);
+    t1.join();
+    t2.join();
+    int64_t end = get_current_millisecond();
+    printf("spend time : %ldms\t, push:%d, pop:%d\n", (end - start), TEST_TIME, TEST_TIME);
 }
 
 int main(){
-    // test_ThreadSafeQueue();
+    test_ThreadSafeQueue();
     // test_LockFreeStack_atomic();
     // test_theardSafeShared_ptr();
-    test_ThreadPool();
+    // test_ThreadPool();
+    test_LockFreePipe();
+    test_LockPipe_cond();
+    test_LockFreePipe_batch();
     return 0;
 }

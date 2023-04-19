@@ -1,6 +1,8 @@
 #ifndef __Data_Chunk_Queue__
 #define __Data_Chunk_Queue__
-# include"DataChunkQueue.h"
+#include"DataChunkQueue.h"
+#include"ErrorAssert.h"
+#include <atomic>
 
 template <typename T, int N>
 class LockFreePipe{
@@ -23,7 +25,7 @@ private:
     T *w;
     T* r;
     T* f;
-    atomic<T*> c;
+    std::atomic<T*> c;
 };
 
 template<typename T, int N>
@@ -38,7 +40,7 @@ void LockFreePipe<T, N>::write(const T& value, bool imcomplete){
     queue.back() = value;
     queue.push();
 
-    if(imcomplete)
+    if(!imcomplete)
         f = &queue.back();
 }
 
@@ -71,7 +73,8 @@ bool LockFreePipe<T, N>::check_read(){
     if(&queue.front() != r && r)
         return true;
     r = c.load();
-    c.compare_exchange_weak(&queue.front(), nullptr);
+    T* p_front = &queue.front();
+    c.compare_exchange_weak(p_front, nullptr);
     if(&queue.front() == r || !r)
         return false;
     return true;

@@ -1,5 +1,7 @@
 #ifndef __DATA_CHUNK_QUEUE__
 #define __DATA_CHUNK_QUEUE__
+#endif
+#include"ErrorAssert.h"
 #include<atomic>
 
 template<typename T, int N>
@@ -43,6 +45,7 @@ zmqQueue<T,N>::zmqQueue(){
     back_chunk = nullptr;
     end_chunk = begin_chunk;
     begin_pos = back_pos = end_pos = 0;
+    spare_chunk=NULL;
 }
 
 template <typename T, int N>
@@ -121,5 +124,3 @@ void zmqQueue<T,N>::pop(){
         free(sc);
     }
 }
-
-#endif
