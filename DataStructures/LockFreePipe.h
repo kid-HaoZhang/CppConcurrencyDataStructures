@@ -31,25 +31,25 @@ private:
 template<typename T, int N>
 LockFreePipe<T, N>::LockFreePipe(){
     queue.push();
-    r = w = f = &queue.back();
-    c.store(&queue.back());
+    r = w = f = queue.back();
+    c.store(queue.back());
 }
 
 template<typename T, int N>
 void LockFreePipe<T, N>::write(const T& value, bool imcomplete){
-    queue.back() = value;
+    (*queue.back()) = value;
     queue.push();
 
     if(!imcomplete)
-        f = &queue.back();
+        f = queue.back();
 }
 
 template<typename T, int N>
 bool LockFreePipe<T, N>::unwrite(T *value){
-    if(f == &queue.back())
+    if(f == queue.back())
         return false;
     queue.unpush();
-    *value = queue.back();
+    *value = *queue.back();
     return true;
 }
 
@@ -70,12 +70,12 @@ bool LockFreePipe<T, N>::flush(){
 
 template<typename T, int N>
 bool LockFreePipe<T, N>::check_read(){
-    if(&queue.front() != r && r)
+    if(queue.front() != r && r)
         return true;
     r = c.load();
-    T* p_front = &queue.front();
-    c.compare_exchange_weak(p_front, nullptr);
-    if(&queue.front() == r || !r)
+    T* pt = queue.front();
+    c.compare_exchange_weak(pt, nullptr);
+    if(queue.front() == r || !r)
         return false;
     return true;
 }
@@ -84,7 +84,7 @@ template<typename T, int N>
 bool LockFreePipe<T, N>::read(T *value){
     if(!check_read())
         return false;
-    *value = queue.front();
+    *value = *(queue.front());
     queue.pop();
     return true;
 }

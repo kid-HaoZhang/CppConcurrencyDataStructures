@@ -1,6 +1,5 @@
 #include<thread>
 #include<chrono>
-#include<numeric>
 #include<sys/time.h>
 #include<mutex>
 #include<time.h>
@@ -10,7 +9,7 @@
 #include"./DataStructures/ThreadPool.h"
 #include"./DataStructures/LockFreePipe.h"
 
-static int TEST_TIME=2000000;
+static int TEST_TIME=100;
 
 int64_t get_current_millisecond()
 {
@@ -29,11 +28,11 @@ void test_ThreadSafeQueue(){
     };
     auto c=[&q]{
         std::atomic<int> a(0);
-        for(int i=0;i<1000;++i){
+        for(int i=0;i<TEST_TIME;++i){
             // std::this_thread::sleep_for(std::chrono::milliseconds(1));
             // q.try_pop();
             a.fetch_add(1);
-            q.wait_and_pop();
+            std::cout<< *(q.wait_and_pop())<<' '<<std::flush;
         }
     };
     auto d=[&q]{
@@ -106,60 +105,10 @@ void test_theardSafeShared_ptr(){
     th2.join();
     return;
 }
-template<typename Iterator,typename T>
-struct accumulate_block
-{
-  T operator()(Iterator first,Iterator last)
-  {
-    T res; 
-    std::accumulate(first,last,res);
-    return res;
-  }
-};
-
-template<typename Iterator,typename T>
-T parallel_accumulate(Iterator first,Iterator last,T init)
-{
-  unsigned long const length=std::distance(first,last);
-  
-  if(!length)
-    return init;
-
-  unsigned long const block_size=25;
-  unsigned long const num_blocks=(length+block_size-1)/block_size;  // 1
-
-  std::vector<std::future<T>> futures(num_blocks-1);
-  ThreadPool pool;
-
-  Iterator block_start=first;
-  for(unsigned long i=0;i<(num_blocks-1);++i)
-  {
-    Iterator block_end=block_start;
-    std::advance(block_end,block_size);
-    futures[i]=pool.submit([block_start,block_end]{
-      return accumulate_block<Iterator,T>()(block_start,block_end);
-    }); // 2
-    block_start=block_end;
-  }
-  T last_result=accumulate_block<Iterator,T>()(block_start,last);
-  T result=init;
-  for(unsigned long i=0;i<(num_blocks-1);++i)
-  {
-    result+=futures[i].get();
-  }
-  result += last_result;
-  return result;
-}
-void test_ThreadPool(){
-    std::vector<int> a(10000,0);
-    std::iota(a.begin(),a.end(),0);
-    std::cout<<parallel_accumulate<std::vector<int>::iterator, int>
-        (a.begin(),a.end(),0)<<std::endl;
-}
 
 void test_LockFreePipe(){
     std::atomic<int> count(0);
-    LockFreePipe<int, 64> lckfq;
+    LockFreePipe<int, 100> lckfq;
     auto pro = [&lckfq](){
         for(int i = 0; i < TEST_TIME; ++i){
             lckfq.write(i, false);
@@ -173,6 +122,7 @@ void test_LockFreePipe(){
             if(lckfq.read(&value)){
                 count.fetch_add(1);
                 last_value = value;
+                std::cout << last_value << ' '<<std::flush;
             }
             else{
                 std::this_thread::yield();
@@ -193,7 +143,7 @@ void test_LockFreePipe(){
 void test_LockPipe_cond(){
     std::mutex mu;
     std::condition_variable cond;
-    LockFreePipe<int, 64> lckfq;
+    LockFreePipe<int, 100> lckfq;
 
     auto pro = [&lckfq, &cond, &mu]{
         for(int i = 0; i < TEST_TIME; ++i){
@@ -213,6 +163,7 @@ void test_LockPipe_cond(){
             int v = 0;
             if(lckfq.read(&v)){
                 vl = v;
+                std::cout<<"read:"<<vl;
                 count.fetch_add(1);
             }
             else{
@@ -233,7 +184,7 @@ void test_LockPipe_cond(){
 }
 
 void test_LockFreePipe_batch(){
-    LockFreePipe<int, 64> lckfq;
+    LockFreePipe<int, 100> lckfq;
     auto con = [&lckfq]{
         std::atomic<int> count(0);
         int vl = 0;
@@ -241,6 +192,7 @@ void test_LockFreePipe_batch(){
             int v = 0;
             if(lckfq.read(&v)){
                 count.fetch_add(1);
+                std::cout << v << ' '<<std::flush;
             }
             else{
                 std::this_thread::yield();
@@ -252,8 +204,15 @@ void test_LockFreePipe_batch(){
     auto pro = [&lckfq]{
         int n = TEST_TIME/10;
         for(int i = 0; i < n; ++i){
-            for(int j = 0; j < 9; ++j)
-                lckfq.write(i, true);
+            lckfq.write(i, true);
+            lckfq.write(i, true);
+            lckfq.write(i, true);
+            lckfq.write(i, true);
+            lckfq.write(i, true);
+            lckfq.write(i, true);
+            lckfq.write(i, true);
+            lckfq.write(i, true);
+            lckfq.write(i, true);
             lckfq.write(i, false);
             lckfq.flush();
         }
@@ -271,9 +230,11 @@ int main(){
     test_ThreadSafeQueue();
     // test_LockFreeStack_atomic();
     // test_theardSafeShared_ptr();
-    // test_ThreadPool();
+    std::cout << "pip" << std::endl;
     test_LockFreePipe();
+    std::cout << "pip_cond" << std::endl;
     test_LockPipe_cond();
+    std::cout << "pip_batch" << std::endl;
     test_LockFreePipe_batch();
     return 0;
 }

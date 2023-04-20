@@ -7,18 +7,18 @@
 template<typename T, int N>
 class zmqQueue{
 public:
-    zmqQueue();
-    ~zmqQueue();
+    inline zmqQueue();
+    inline ~zmqQueue();
 
     zmqQueue(const zmqQueue&) = delete;
     const zmqQueue& operator=(const zmqQueue&) = delete;
 
-    T& front();
-    T& back();
+    inline T* front();
+    inline T* back();
 
-    void push();  // 增加一个元素
-    void unpush();
-    void pop();
+    inline void push();  // 增加一个元素
+    inline void unpush();
+    inline void pop();
 
 private:
     struct chunk_t
@@ -39,7 +39,7 @@ private:
 };
 
 template <typename T, int N>
-zmqQueue<T,N>::zmqQueue(){
+inline zmqQueue<T,N>::zmqQueue(){
     begin_chunk = (chunk_t*)malloc(sizeof(chunk_t));
     alloc_assert(begin_chunk);
     back_chunk = nullptr;
@@ -49,7 +49,7 @@ zmqQueue<T,N>::zmqQueue(){
 }
 
 template <typename T, int N>
-zmqQueue<T,N>::~zmqQueue(){
+inline zmqQueue<T,N>::~zmqQueue(){
     while (begin_chunk != end_chunk)
     {
         chunk_t* t = begin_chunk;
@@ -63,17 +63,17 @@ zmqQueue<T,N>::~zmqQueue(){
 }
 
 template <typename T, int N>
-T& zmqQueue<T,N>::front(){
-    return begin_chunk->values[begin_pos];
+inline T* zmqQueue<T,N>::front(){
+    return &begin_chunk->values[begin_pos];
 }
 
 template <typename T, int N>
-T& zmqQueue<T,N>::back(){
-    return back_chunk->values[back_pos];
+inline T* zmqQueue<T,N>::back(){
+    return &back_chunk->values[back_pos];
 }
 
 template <typename T, int N>
-void zmqQueue<T,N>::push(){
+inline void zmqQueue<T,N>::push(){
     back_chunk = end_chunk;
     back_pos = end_pos;
 
@@ -95,17 +95,17 @@ void zmqQueue<T,N>::push(){
 }
 
 template <typename T, int N>
-void zmqQueue<T,N>::unpush(){
+inline void zmqQueue<T,N>::unpush(){
     if(back_pos)
         --back_pos;
     else{
-        back = N-1;
+        back_pos = N-1;
         back_chunk = back_chunk->prev;
     }
     if(end_pos)
         --end_pos;
     else{
-        end_pos = N-1;
+        end_pos = N - 1;
         end_chunk = end_chunk->prev;
         free(end_chunk->next);
         end_chunk->next = nullptr;
@@ -113,7 +113,7 @@ void zmqQueue<T,N>::unpush(){
 }
 
 template <typename T, int N>
-void zmqQueue<T,N>::pop(){
+inline void zmqQueue<T,N>::pop(){
     if(++begin_pos==N){
         chunk_t* t = begin_chunk;
         begin_chunk = begin_chunk->next;

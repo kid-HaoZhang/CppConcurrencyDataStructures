@@ -1,6 +1,7 @@
 #include<future>
 #include<mutex>
 #include<vector>
+#include<functional>
 #include"ThreadSafeQueue.h"
 
 class threads_joiner{ // 防止线程泄漏的joiner
@@ -15,39 +16,13 @@ public:
     }
 };
 
-class FunctionWarpper{
-    struct impl_base{
-        virtual void call()=0;
-        virtual ~impl_base(){}
-    };
-
-    std::unique_ptr<impl_base> impl;
-    template<typename F>
-    struct impl_type: impl_base{
-        F f;
-        impl_type(F&& f_): f(std::move(f_)){}
-        void call(){f();}
-    };
-public:
-    template<typename F>
-    FunctionWarpper(F&& f):impl(std::make_unique<impl_type<F>>(std::move(f))){}
-    FunctionWarpper()=default;
-    void operator()(){impl->call();}
-    FunctionWarpper(FunctionWarpper&& other):impl(std::move(other.impl)){}
-    FunctionWarpper& operator=(FunctionWarpper&& other){
-        impl=std::move(other.impl);
-        return *this;
-    }
-    FunctionWarpper(const FunctionWarpper&)=delete;
-    FunctionWarpper& operator=(const FunctionWarpper&)=delete;
-};
-
 class ThreadPool{
 private:
+    using Task = std::function<void()>;
     std::vector<std::thread> threads;
     threads_joiner joiner;
     std::atomic_bool done;
-    ThreadSafeQueue<FunctionWarpper> work_queue;
+    ThreadSafeQueue<Task> work_queue;
     unsigned int threads_num;
 
     void work_thread();
@@ -56,13 +31,13 @@ public:
     ThreadPool();
     ~ThreadPool();
 
-    template<typename FunctionType>
-    std::future<typename std::result_of<FunctionType()>::type> submit(FunctionType);
+    template<typename FunctionType, typename... Args>
+    auto submit(FunctionType&&, Args&&...);
 };
 
 void ThreadPool::work_thread(){
     while(!done){
-        FunctionWarpper task;
+        Task task;
         if(work_queue.try_pop(task)){
             task();
         }
@@ -89,11 +64,11 @@ ThreadPool::~ThreadPool(){
     done=true;
 }
 
-template<typename FunctionType>
-std::future<typename std::result_of<FunctionType()>::type>  ThreadPool::submit(FunctionType f){
-    using result_type = std::result_of<FunctionType()>::type;
-    std::packaged_task<result_type()> task(std::move(f));
-    std::future<result_type> res(task.get_future());
-    work_queue.push(std::move(task));
+template<typename FunctionType, typename... Args>
+auto  ThreadPool::submit(FunctionType&& f, Args&&... args){
+    using result_type = std::result_of<FunctionType(Args...)>::type;
+    auto task = std::make_shared<std::packaged_task<result_type()>>(std::bind(std::forward<FunctionType>(f), std::forward<Args>(args)...));
+    std::future<result_type> res(task->get_future());
+    work_queue.push([task](){(*task)();});
     return res;
 }
