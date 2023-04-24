@@ -9,7 +9,9 @@
 #include"./DataStructures/ThreadPool.h"
 #include"./DataStructures/LockFreePipe.h"
 
-static int TEST_TIME=100;
+// #define DEBUG
+
+static int TEST_TIME=1000000;
 
 int64_t get_current_millisecond()
 {
@@ -32,7 +34,9 @@ void test_ThreadSafeQueue(){
             // std::this_thread::sleep_for(std::chrono::milliseconds(1));
             // q.try_pop();
             a.fetch_add(1);
+#ifdef DEBUG
             std::cout<< *(q.wait_and_pop())<<' '<<std::flush;
+#endif
         }
     };
     auto d=[&q]{
@@ -122,7 +126,9 @@ void test_LockFreePipe(){
             if(lckfq.read(&value)){
                 count.fetch_add(1);
                 last_value = value;
+#ifdef DEBUG
                 std::cout << last_value << ' '<<std::flush;
+#endif
             }
             else{
                 std::this_thread::yield();
@@ -163,7 +169,9 @@ void test_LockPipe_cond(){
             int v = 0;
             if(lckfq.read(&v)){
                 vl = v;
+#ifdef DEBUG
                 std::cout<<"read:"<<vl;
+#endif
                 count.fetch_add(1);
             }
             else{
@@ -192,7 +200,9 @@ void test_LockFreePipe_batch(){
             int v = 0;
             if(lckfq.read(&v)){
                 count.fetch_add(1);
+#ifdef DEBUG
                 std::cout << v << ' '<<std::flush;
+#endif
             }
             else{
                 std::this_thread::yield();
