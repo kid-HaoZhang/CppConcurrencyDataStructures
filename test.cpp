@@ -8,10 +8,13 @@
 #include"./DataStructures/ThreadSafeShared_ptr.h"
 #include"./DataStructures/ThreadPool.h"
 #include"./DataStructures/LockFreePipe.h"
+#include"./DataStructures/LockFreeQueue.h"
+#include"./DataStructures/BlockQueue.h"
 
 // #define DEBUG
 
-static int TEST_TIME=1000000;
+static int TEST_TIME=2000000;
+static int THREAD_NUM = 3;
 
 int64_t get_current_millisecond()
 {
@@ -29,11 +32,12 @@ void test_ThreadSafeQueue(){
         }
     };
     auto c=[&q]{
-        std::atomic<int> a(0);
+        // std::atomic<int> a(0);
         for(int i=0;i<TEST_TIME;++i){
             // std::this_thread::sleep_for(std::chrono::milliseconds(1));
             // q.try_pop();
-            a.fetch_add(1);
+            // a.fetch_add(1);
+            q.wait_and_pop();
 #ifdef DEBUG
             std::cout<< *(q.wait_and_pop())<<' '<<std::flush;
 #endif
@@ -44,46 +48,66 @@ void test_ThreadSafeQueue(){
         for(int i=0;i<1000;++i){
             r.push_back(*q.wait_and_pop());
         }
+#ifdef DEBUG
         for(auto i:r)
             std::cout<<i<<' ';
+#endif
     };
     int64_t start = get_current_millisecond();
-    std::thread t1=std::thread(a);
-    std::thread t3=std::thread(c);
+    std::thread t1[THREAD_NUM];
+    std::thread t3[THREAD_NUM];
+    for(int i = 0; i < THREAD_NUM; ++i){
+        t1[i] = std::thread(a);
+        t3[i] = std::thread(c);
+    }
     // std::thread t4=std::thread(d);
-    t1.join();
-    t3.join();
+    for(int i = 0; i < THREAD_NUM; ++i){
+        t1[i].join();
+        t3[i].join();
+    }
     // t4.join();
     int64_t end = get_current_millisecond();
     printf("spend time : %ldms\t, push:%d, pop:%d\n", (end - start), TEST_TIME, TEST_TIME);
 }
 
-/*void test_LockFreeStack_atomic(){
-    LockFreeStack_atomic<int> s;
-    auto a=[&s](){
-        for(int i=0;i<1000;++i){
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            s.push(i);
+void test_ThreadSafeQueue1(){
+    std::queue<int> q;
+    std::mutex mu;
+    auto a=[&q, &mu](){
+        for(int i=0;i<TEST_TIME;++i){
+            // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            std::lock_guard<std::mutex> lck(mu);
+            q.push(i);
         }
     };
-    auto b=[&s](){
-        std::vector<int>r;
-        for(int i=0;i<1000;++i){
-            std::shared_ptr<int> t=s.pop();
-            if(t)
-                r.push_back(*t);
+    auto c=[&q, &mu]{
+        std::atomic<int> a(0);
+        for(int i=0;i<TEST_TIME;++i){
+            // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            // q.try_pop();
+            std::lock_guard<std::mutex> lck(mu);
+            // a.fetch_add(1);
+            q.pop();
+#ifdef DEBUG
+            std::cout<< *(q.wait_and_pop())<<' '<<std::flush;
+#endif
         }
-        for(auto i:r)
-            std::cout<<i<<' ';
     };
-    std::thread t1[3],t2[3];
-    for(int i=0;i<3;++i){
-        t1[i]=std::thread(a);
-        t2[i]=std::thread(b);
-        t1[i].join();
-        t2[i].join();
+    int64_t start = get_current_millisecond();
+    std::thread t1[THREAD_NUM];
+    std::thread t3[THREAD_NUM];
+    for(int i = 0; i < THREAD_NUM; ++i){
+        t1[i] = std::thread(a);
+        t3[i] = std::thread(c);
     }
-}*/
+    for(int i = 0; i < THREAD_NUM; ++i){
+        t1[i].join();
+        t3[i].join();
+    }
+    // t4.join();
+    int64_t end = get_current_millisecond();
+    printf("spend time : %ldms\t, push:%d, pop:%d\n", (end - start), TEST_TIME, TEST_TIME);
+}
 
 void test_theardSafeShared_ptr(){
     ThreadSafeShared_ptr<int> s(new int(1));
@@ -236,15 +260,78 @@ void test_LockFreePipe_batch(){
     printf("spend time : %ldms\t, push:%d, pop:%d\n", (end - start), TEST_TIME, TEST_TIME);
 }
 
+void test_LockFreeRingbufferQueue(){
+    LockFreeQueueCpp11<int> lckfq(TEST_TIME);
+    auto a = [&lckfq]{
+        for(int i = 0; i < TEST_TIME; ++i)
+            lckfq.push(i);
+    };
+    auto c = [&lckfq]{
+        int value;
+        for(int i = 0; i < TEST_TIME; ++i)
+            lckfq.pop(value);
+    };
+    int64_t start = get_current_millisecond();
+    std::thread t1[THREAD_NUM];
+    std::thread t3[THREAD_NUM];
+    for(int i = 0; i < THREAD_NUM; ++i){
+        t1[i] = std::thread(a);
+        t3[i] = std::thread(c);
+    }
+    for(int i = 0; i < THREAD_NUM; ++i){
+        t1[i].join();
+        t3[i].join();
+    }
+    // t4.join();
+    int64_t end = get_current_millisecond();
+    printf("spend time : %ldms\t, push:%d, pop:%d\n", (end - start), TEST_TIME, TEST_TIME);
+}
+
+void test_BlockQueue(){
+    BlockQueue q;
+    auto a=[&q](){
+        for(int i=0;i<TEST_TIME;++i){
+            q.Enqueue(i);
+        }
+    };
+    auto c=[&q]{
+        int value;
+        for(int i=0;i<TEST_TIME;++i){
+            q.Dequeue(value);
+#ifdef DEBUG
+            std::cout<< *(q.wait_and_pop())<<' '<<std::flush;
+#endif
+        }
+    };
+    int64_t start = get_current_millisecond();
+    std::thread t1[THREAD_NUM];
+    std::thread t3[THREAD_NUM];
+    for(int i = 0; i < THREAD_NUM; ++i){
+        t1[i] = std::thread(a);
+        t3[i] = std::thread(c);
+    }
+    // std::thread t4=std::thread(d);
+    for(int i = 0; i < THREAD_NUM; ++i){
+        t1[i].join();
+        t3[i].join();
+    }
+    // t4.join();
+    int64_t end = get_current_millisecond();
+    printf("spend time : %ldms\t, push:%d, pop:%d\n", (end - start), TEST_TIME, TEST_TIME);
+}
+
 int main(){
     test_ThreadSafeQueue();
+    // test_ThreadSafeQueue1();
     // test_LockFreeStack_atomic();
     // test_theardSafeShared_ptr();
-    std::cout << "pip" << std::endl;
-    test_LockFreePipe();
-    std::cout << "pip_cond" << std::endl;
-    test_LockPipe_cond();
-    std::cout << "pip_batch" << std::endl;
-    test_LockFreePipe_batch();
+    // std::cout << "pip" << std::endl;
+    // test_LockFreePipe();
+    // std::cout << "pip_cond" << std::endl;
+    // test_LockPipe_cond();
+    // std::cout << "pip_batch" << std::endl;
+    // test_LockFreePipe_batch();
+    test_LockFreeRingbufferQueue();
+    test_BlockQueue();
     return 0;
 }
